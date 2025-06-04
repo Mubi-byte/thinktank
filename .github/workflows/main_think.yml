@@ -67,5 +67,5 @@ jobs:
         id: deploy-to-webapp
         with:
           app-name: 'think'
-          slot-name: 'Production'
+          slot-name: 'test'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_2B2B6983AC414C1E92A6E4EAEDFF8AC0 }}
