@@ -1,0 +1,57 @@
+# Node.js dependencies and build output (React frontend)
+node_modules/
+build/
+dist/
+
+# Python compiled files and caches (FastAPI backend)
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Python virtual environment folders (if any)
+venv/
+env/
+.env/
+.env.local
+.env.*.local
+
+# VSCode and IDE config folders
+.vscode/
+.idea/
+
+# MacOS system files
+.DS_Store
+
+# Windows system files
+Thumbs.db
+
+# Logs
+*.log
+
+# Local environment config files (API keys, secrets)
+.env
+.env.local
+.env.*.local
+
+# Azure specific cache or deployment files (if any)
+azure-pipelines.yml  # if you have CI/CD files you don't want pushed, but usually keep these if shared
+*.azure/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Secrets or tokens you may have saved locally for 2FA
+secrets.json
+tokens.json
+
+# Test output folders
+.coverage
+htmlcov/
+
+# Pytest cache
+.pytest_cache/
+
+# Jupyter Notebook checkpoints (if any)
+.ipynb_checkpoints/
