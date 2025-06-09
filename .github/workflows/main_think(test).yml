@@ -68,4 +68,4 @@ jobs:
         with:
           app-name: 'think'
           slot-name: 'think-test'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_D56CCEF0687B48CF852B5D4AC31E6B12 }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE}}
