@@ -1,28 +1,49 @@
 import React, { useState } from "react";
+import toast, { Toaster } from "react-hot-toast";
+import { FaFileUpload, FaUserCircle, FaQuestionCircle } from "react-icons/fa";
+import thinkTankLogo from "./thinktankblue_logo.png";
+//import ReactMarkdown from 'react-markdown';
+
+// Dynamic API Base URL function
+const getApiBaseUrl = () => {
+  // In development, use localhost:8000
+  // In production, use relative paths (empty string)
+  return process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : '';
+};
 
 export default function App() {
+  // State management
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [token, setToken] = useState("");
   const [accessToken, setAccessToken] = useState(null);
   const [show2FA, setShow2FA] = useState(false);
-
   const [uploading, setUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
-
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState([
     {
       role: "system",
-      content: `Hi I am your trusty RFP assistant.
-Please upload a document and log in to get started.`,
+      content: `Hi I am your trusty RFP/RFQ assistant.\nPlease upload a document.`,
     },
   ]);
 
-  // ===== LOGIN & 2FA =====
+  const formatResponse = (content) => (
+    <div
+      dangerouslySetInnerHTML={{ __html: content }}
+      style={{
+        fontSize: "14px",
+        lineHeight: "1.6",
+        color: "#333",
+      }}
+    />
+  );
+  
+  // Login handler
   const handleLogin = async () => {
-    const res = await fetch("http://localhost:8000/login", {
+    const apiBaseUrl = getApiBaseUrl();
+    const res = await fetch(`${apiBaseUrl}/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
@@ -32,17 +53,20 @@ Please upload a document and log in to get started.`,
     if (res.ok) {
       if (data.requires_2fa) {
         setShow2FA(true);
+        toast("Enter your 2FA code.");
       } else {
         setAccessToken(data.access_token);
-        alert("Logged in!");
+        toast.success("Logged in successfully!");
       }
     } else {
-      alert(data.detail || "Login failed");
+      toast.error(data.detail || "Login failed");
     }
   };
 
+  // 2FA handler
   const handleVerify2FA = async () => {
-    const res = await fetch("http://localhost:8000/2fa/verify", {
+    const apiBaseUrl = getApiBaseUrl();
+    const res = await fetch(`${apiBaseUrl}/2fa/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, token }),
@@ -52,66 +76,85 @@ Please upload a document and log in to get started.`,
     if (res.ok) {
       setAccessToken(data.access_token);
       setShow2FA(false);
-      alert("2FA verified and logged in!");
+      toast.success("2FA verified!");
     } else {
-      alert(data.detail || "2FA verification failed");
+      toast.error(data.detail || "2FA failed");
     }
   };
 
-  // ===== FILE UPLOAD =====
+  // File upload handler
   const handleUpload = async (event) => {
     const file = event.target.files[0];
     if (!file || !accessToken) {
-      alert("Please log in first.");
+      toast.error("Please log in first.");
+      return;
+    }
+    if (!file.name.endsWith(".pdf")) {
+      toast.error("Only PDF files are allowed.");
       return;
     }
 
     setUploading(true);
     setUploadSuccess(false);
-
     const formData = new FormData();
     formData.append("file", file);
 
     try {
-      const res = await fetch("http://localhost:8000/upload", {
+      const apiBaseUrl = getApiBaseUrl();
+      const res = await fetch(`${apiBaseUrl}/upload`, {
         method: "POST",
         body: formData,
       });
-
       const data = await res.json();
 
       if (res.ok) {
         setUploadSuccess(true);
-        alert("File uploaded and processed successfully.");
+        toast.success("Document uploaded!");
       } else {
-        alert("Upload failed: " + (data.error || "Unknown error"));
+        toast.error(data.error || "Upload failed");
       }
     } catch (error) {
-      alert("Upload error: " + error.message);
+      toast.error("Upload error: " + error.message);
     } finally {
       setUploading(false);
     }
   };
 
-  // ===== CHAT =====
+  // Send message handler
   const sendMessage = async () => {
     if (!input.trim()) return;
+    if (!accessToken) {
+      toast.error("Please log in first.");
+      return;
+    }
 
-    const newMessages = [...messages, { role: "user", content: input }];
+    const tempInput = input;
+    const filteredHistory = messages.filter((msg) => msg.role !== "system");
+    const newMessages = [...messages, { role: "user", content: tempInput }];
+
     setMessages(newMessages);
     setInput("");
     setLoading(true);
 
     try {
-      const res = await fetch("http://localhost:8000/chat", {
+      const apiBaseUrl = getApiBaseUrl();
+      const res = await fetch(`${apiBaseUrl}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ user_input: input }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          user_input: tempInput,
+          history: filteredHistory,
+        }),
       });
+
       const data = await res.json();
 
       if (res.ok) {
-        setMessages([...newMessages, { role: "assistant", content: data.response }]);
+        const reply = data.response?.trim() || "[No response received from assistant.]";
+        setMessages([...newMessages, { role: "assistant", content: reply }]);
       } else {
         setMessages([
           ...newMessages,
@@ -129,114 +172,406 @@ Please upload a document and log in to get started.`,
   };
 
   return (
-    <div style={{ maxWidth: 700, margin: "auto", fontFamily: "Arial, sans-serif" }}>
-      <h2>Login</h2>
-      {!accessToken && (
-        <>
-          <input
-            type="text"
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            style={{ marginRight: 10 }}
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{ marginRight: 10 }}
-          />
-          <button onClick={handleLogin}>Login</button>
-        </>
-      )}
-      {show2FA && (
-        <div style={{ marginTop: 10 }}>
-          <input
-            type="text"
-            placeholder="Enter 2FA Code"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            style={{ marginRight: 10 }}
-          />
-          <button onClick={handleVerify2FA}>Verify 2FA</button>
+    <div
+      style={{
+        fontFamily: "Arial, sans-serif",
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <Toaster position="top-center" />
+
+      <header
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "10px 20px",
+          backgroundColor: "#f0f8ff",
+          borderBottom: "1px solid #ccc",
+        }}
+      >
+        <h1 style={{ color: "#1b8ec4", fontSize: "1.5em" }}>
+          Think Tank RFP/RFQ Analyser
+        </h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <FaUserCircle size={28} color="#1b8ec4" />
+          <img src={thinkTankLogo} alt="Think Tank Logo" style={{ height: 40 }} />
         </div>
-      )}
+      </header>
 
-      {accessToken && (
-        <>
-          <hr />
-          <h2>Upload RFP Document</h2>
-          <input
-            type="file"
-            accept=".pdf,.doc,.docx"
-            onChange={handleUpload}
-            disabled={uploading || loading}
-          />
-          {uploading && <p>Uploading and processing document...</p>}
-          {uploadSuccess && <p style={{ color: "green" }}>Document uploaded and processed!</p>}
-
-          <hr />
-
-          <h2>Chat with Assistant</h2>
+      <div
+        style={{
+          padding: 20,
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          maxWidth: 900,
+          margin: "auto",
+          width: "100%",
+        }}
+      >
+        {!accessToken ? (
           <div
             style={{
-              border: "1px solid #ccc",
-              padding: 10,
-              minHeight: 300,
-              overflowY: "auto",
-              marginBottom: 10,
-              backgroundColor: "#fafafa",
-              whiteSpace: "pre-wrap",
+              backgroundColor: "#f8f9fa",
+              padding: "20px",
+              borderRadius: "6px",
+              marginBottom: "16px",
             }}
           >
-            {messages.map((msg, idx) => (
-              <div
-                key={idx}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "16px",
+              }}
+            >
+              <h2
                 style={{
-                  textAlign: msg.role === "user" ? "right" : "left",
-                  margin: "10px 0",
+                  fontSize: "1.3rem",
+                  color: "#1b8ec4",
+                  margin: 0,
                 }}
               >
-                <div
+                Login to Continue
+              </h2>
+              <button
+                onClick={() =>
+                  toast(
+                    <div style={{ padding: "8px", maxWidth: "280px" }}>
+                      <h3
+                        style={{
+                          margin: "0 0 8px 0",
+                          fontSize: "1rem",
+                        }}
+                      >
+                        Login Help
+                      </h3>
+                      <p
+                        style={{
+                          margin: "0 0 8px 0",
+                          fontSize: "0.9rem",
+                        }}
+                      >
+                        <strong>Available demo accounts:</strong>
+                      </p>
+                      <ul
+                        style={{
+                          paddingLeft: "18px",
+                          margin: "8px 0",
+                          fontSize: "0.9rem",
+                        }}
+                      >
+                        <li style={{ marginBottom: "4px" }}>
+                          <b>Username:</b> alice
+                          <br />
+                          <b>Password:</b> secret123 (with 2FA)
+                        </li>
+                        <li>
+                          <b>Username:</b> bob
+                          <br />
+                          <b>Password:</b> password (no 2FA)
+                        </li>
+                      </ul>
+                    </div>,
+                    { duration: 8000 }
+                  )
+                }
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#1b8ec4",
+                  cursor: "pointer",
+                  fontSize: "1rem",
+                  display: "flex",
+                  alignItems: "center",
+                  padding: "4px",
+                }}
+              >
+                <FaQuestionCircle style={{ marginRight: "4px" }} /> Help
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "12px",
+                marginBottom: "12px",
+                flexWrap: "wrap",
+              }}
+            >
+              <input
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  fontSize: "14px",
+                  borderRadius: "4px",
+                  border: "1px solid #ddd",
+                  minWidth: "180px",
+                }}
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  fontSize: "14px",
+                  borderRadius: "4px",
+                  border: "1px solid #ddd",
+                  minWidth: "180px",
+                }}
+              />
+              <button
+                onClick={handleLogin}
+                style={{
+                  padding: "10px 20px",
+                  backgroundColor: "#1b8ec4",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                  cursor: "pointer",
+                  fontWeight: "bold",
+                }}
+              >
+                Sign In
+              </button>
+            </div>
+
+            {show2FA && (
+              <div
+                style={{
+                  backgroundColor: "#fff",
+                  padding: "12px",
+                  borderRadius: "4px",
+                  border: "1px solid #eee",
+                  marginTop: "12px",
+                }}
+              >
+                <h3
                   style={{
-                    display: "inline-block",
-                    backgroundColor: msg.role === "user" ? "#dcf8c6" : "#e8e8e8",
-                    borderRadius: 10,
-                    padding: 10,
-                    maxWidth: "80%",
-                    fontSize: 14,
+                    fontSize: "0.9rem",
+                    color: "#1b8ec4",
+                    margin: "0 0 8px 0",
                   }}
                 >
-                  {msg.content}
+                  Two-Factor Authentication Required
+                </h3>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "8px",
+                    alignItems: "center",
+                  }}
+                >
+                  <input
+                    placeholder="6-digit code"
+                    value={token}
+                    onChange={(e) => setToken(e.target.value)}
+                    style={{
+                      flex: 1,
+                      padding: "8px 12px",
+                      fontSize: "14px",
+                      borderRadius: "4px",
+                      border: "1px solid #ddd",
+                    }}
+                  />
+                  <button
+                    onClick={handleVerify2FA}
+                    style={{
+                      padding: "8px 16px",
+                      backgroundColor: "#1b8ec4",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "4px",
+                      fontSize: "14px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Verify
+                  </button>
                 </div>
+                <p
+                  style={{
+                    fontSize: "0.7rem",
+                    color: "#666",
+                    margin: "6px 0 0 0",
+                  }}
+                >
+                  Enter code from your authenticator app
+                </p>
               </div>
-            ))}
-            {loading && (
-              <div style={{ fontStyle: "italic", color: "#999" }}>Assistant is typing...</div>
             )}
           </div>
+        ) : (
+          <>
+            <div style={{ marginBottom: "12px" }}>
+              <label
+                style={{
+                  fontWeight: "bold",
+                  fontSize: "14px",
+                  display: "block",
+                  marginBottom: "6px",
+                }}
+              >
+                Upload your RFP document (PDF only):
+              </label>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <label
+                  htmlFor="file-upload"
+                  style={{
+                    backgroundColor: "#1b8ec4",
+                    color: "#fff",
+                    padding: "8px 16px",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: "14px",
+                  }}
+                >
+                  <FaFileUpload size={14} /> Upload PDF
+                </label>
+                <input
+                  id="file-upload"
+                  type="file"
+                  accept=".pdf"
+                  onChange={handleUpload}
+                  style={{ display: "none" }}
+                />
+                {uploading && (
+                  <span
+                    style={{
+                      color: "#666",
+                      fontSize: "13px",
+                    }}
+                  >
+                    Uploading...
+                  </span>
+                )}
+                {uploadSuccess && (
+                  <span
+                    style={{
+                      color: "green",
+                      fontSize: "13px",
+                    }}
+                  >
+                    ✔ Ready for analysis
+                  </span>
+                )}
+              </div>
+            </div>
 
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") sendMessage();
-            }}
-            placeholder="Type your message..."
-            style={{ width: "80%", padding: 10, fontSize: 14 }}
-            disabled={loading || uploading || !uploadSuccess}
-          />
-          <button
-            onClick={sendMessage}
-            disabled={loading || uploading || !uploadSuccess}
-            style={{ padding: 10, marginLeft: 10 }}
-          >
-            Send
-          </button>
-        </>
-      )}
+            <div
+              style={{
+                flex: 1,
+                border: "1px solid #ccc",
+                borderRadius: "6px",
+                padding: "12px",
+                marginBottom: "12px",
+                overflowY: "auto",
+                backgroundColor: "#fefefe",
+              }}
+            >
+              {messages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    textAlign: msg.role === "user" ? "right" : "left",
+                    marginBottom: "12px",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "inline-block",
+                      backgroundColor: msg.role === "user" ? "#d0ebff" : "#f8f9fa",
+                      borderRadius: "6px",
+                      padding: "12px",
+                      maxWidth: "85%",
+                      fontSize: "14px",
+                      color: "#333",
+                      textAlign: "left",
+                      lineHeight: "1.4",
+                    }}
+                  >
+                    {msg.role === "assistant"
+                      ? formatResponse(msg.content)
+                      : msg.content}
+                  </div>
+                </div>
+              ))}
+              {loading && (
+                <div
+                  style={{
+                    fontStyle: "italic",
+                    color: "#777",
+                    fontSize: "13px",
+                    margin: "8px 0 4px 0",
+                  }}
+                >
+                  Assistant is typing...
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+              }}
+            >
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") sendMessage();
+                }}
+                placeholder="Type your message..."
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  fontSize: "14px",
+                  borderRadius: "4px",
+                  border: "1px solid #ddd",
+                }}
+                disabled={loading || uploading || !uploadSuccess}
+              />
+              <button
+                onClick={sendMessage}
+                disabled={loading || uploading || !uploadSuccess}
+                style={{
+                  padding: "10px 16px",
+                  backgroundColor: "#1b8ec4",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "4px",
+                  fontSize: "14px",
+                  cursor: "pointer",
+                }}
+              >
+                Send
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
